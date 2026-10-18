@@ -38,3 +38,5 @@ The XAMPP defaults are used automatically: database `php_bookstore`, user `root`
 - `BOOKSTORE_DB_USER`
 - `BOOKSTORE_DB_PASSWORD`
 - `BOOKSTORE_BASE_PATH`
+
+  ## ShelfStack was developed from the educational PHP_Bookstore project by automatasz. It has been substantially redesigned and extended with new storefront, shopping cart, administration features and UI.
