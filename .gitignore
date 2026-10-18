@@ -1,0 +1,24 @@
+# Lokalne ustawienia i sekrety
+.env
+.env.*
+!.env.example
+
+# Zależności i pliki narzędzi
+/vendor/
+/.phpunit.cache/
+/.phpunit.result.cache
+/.php-cs-fixer.cache
+
+# Dane generowane lokalnie
+/.playwright-mcp/
+/artifacts/
+/logs/
+/sessions/
+*.log
+
+# Edytory i system operacyjny
+/.idea/
+/.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini

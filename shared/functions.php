@@ -1,61 +1,143 @@
 <?php
-// returns a styled container with errors
-function error_container($errors)
-{
-    $error_list = "";
-    foreach ($errors as $err) {
-        $error_list .= "<li> {$err} </li>\n";
-    }
+declare(strict_types=1);
 
-    $error_container = <<<ERRLIST
-    <div class="container mt-5">
-        <h2> Something went wrong... </h2>
-        <ul>
-            {$error_list}        
-        </ul>
-        <a class="btn btn-dark" href="/admin/book_list.php"> Go back </a>
-    </div>
-ERRLIST;
-    $error_container .= "\n";
-    return $error_container;
-}
-// trim, check if empty, if length > 200 and apply sanitize string
-function validate_generic_data(&$data, &$errors)
+require_once __DIR__ . '/config.php';
+
+function e(mixed $value): string
 {
-    foreach ($data as $e_key => $e_value) {
-        trim($e_value);
-        empty($e_value) ? $errors[] = "Error: $e_key is empty." : null;
-        if (strlen($e_value) > 200)
-            $errors[] = "Error: $e_key is too long.";
-        $data[$e_key] = filter_var($data[$e_key], FILTER_SANITIZE_STRING, FILTER_FLAG_STRIP_LOW);
-    }
-}
-// start the session
-function set_session()
-{
-    ini_set("session.save_path", "/home/unn_w19006600/sessionData");
-    if (!isset($_SESSION)) {
-        session_start();
-    }
-}
-// check if the session is logged in
-function check_session()
-{
-    set_session();
-    if (isset($_SESSION['logged-in']) && $_SESSION['logged-in']) {
-        return true;
-    } else return false;
+    return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-function sanitize_string($string)
+function start_app_session(): void
 {
-    return filter_var($string, FILTER_SANITIZE_STRING, FILTER_FLAG_STRIP_LOW);
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        return;
+    }
+
+    ini_set('session.use_only_cookies', '1');
+    ini_set('session.use_strict_mode', '1');
+    session_set_cookie_params([
+        'httponly' => true,
+        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'samesite' => 'Lax',
+        'path' => '/',
+    ]);
+    session_start();
 }
 
-function sanitize_book($book)
+function check_session(): bool
 {
-    $book->bookYear = filter_var($book->bookYear, FILTER_SANITIZE_NUMBER_INT);
-    $book->bookPrice = filter_var($book->bookPrice, FILTER_SANITIZE_NUMBER_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
-    $book->bookTitle = filter_var($book->bookTitle, FILTER_SANITIZE_STRING);
-    return $book;
+    start_app_session();
+    return ($_SESSION['logged-in'] ?? false) === true
+        && isset($_SESSION['user_id'], $_SESSION['role'], $_SESSION['username'])
+        && in_array($_SESSION['role'], ['customer', 'admin'], true);
+}
+
+function is_admin(): bool
+{
+    return check_session() && ($_SESSION['role'] ?? '') === 'admin';
+}
+
+function is_customer(): bool
+{
+    return check_session() && ($_SESSION['role'] ?? '') === 'customer';
+}
+
+function current_user_id(): ?int
+{
+    return check_session() ? (int) $_SESSION['user_id'] : null;
+}
+
+function require_login(): void
+{
+    if (!check_session()) {
+        header('Location: ' . app_url('auth/login_form.php'));
+        exit;
+    }
+}
+
+function require_admin(): void
+{
+    if (!is_admin()) {
+        if (check_session()) {
+            header('Location: ' . app_url('shop.php'));
+            exit;
+        }
+
+        header('Location: ' . app_url('auth/login_form.php'));
+        exit;
+    }
+}
+
+function set_flash_message(string $type, string $message): void
+{
+    start_app_session();
+    $_SESSION['flash_message'] = [
+        'type' => $type,
+        'message' => $message,
+    ];
+}
+
+/** @return array{type: string, message: string}|null */
+function pull_flash_message(): ?array
+{
+    start_app_session();
+    $flash = $_SESSION['flash_message'] ?? null;
+    unset($_SESSION['flash_message']);
+
+    if (!is_array($flash) || !isset($flash['type'], $flash['message'])) {
+        return null;
+    }
+
+    return [
+        'type' => (string) $flash['type'],
+        'message' => (string) $flash['message'],
+    ];
+}
+
+function csrf_token(): string
+{
+    start_app_session();
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+function csrf_is_valid(?string $token): bool
+{
+    start_app_session();
+    return is_string($token)
+        && isset($_SESSION['csrf_token'])
+        && hash_equals($_SESSION['csrf_token'], $token);
+}
+
+function error_container(array $errors, ?string $backUrl = null): string
+{
+    $items = '';
+    foreach ($errors as $error) {
+        $message = $error instanceof Throwable ? $error->getMessage() : (string) $error;
+        $items .= '<li>' . e($message) . "</li>\n";
+    }
+
+    $backUrl ??= app_url();
+
+    return '<div class="container mt-5">'
+        . '<div class="alert alert-danger" role="alert">'
+        . '<h2 class="h4">Something went wrong</h2><ul class="mb-3">' . $items . '</ul>'
+        . '<a class="btn btn-dark" href="' . e($backUrl) . '">Go back</a>'
+        . '</div></div>' . "\n";
+}
+
+function validate_generic_data(array &$data, array &$errors): void
+{
+    foreach ($data as $key => $value) {
+        $value = trim((string) $value);
+        if ($value === '') {
+            $errors[] = ucfirst($key) . ' is required.';
+        } elseif (mb_strlen($value) > 200) {
+            $errors[] = ucfirst($key) . ' is too long.';
+        }
+        $data[$key] = $value;
+    }
 }

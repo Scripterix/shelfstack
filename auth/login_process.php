@@ -1,95 +1,75 @@
 <?php
-require_once("../shared/page_components.php");
-require_once("../shared/connection.php");
-require_once("../shared/functions.php");
+declare(strict_types=1);
 
-// if you are logged in, you get redirected to books
-if (check_session()) {
-  success_container();
-} else {
-  display_page();
-}
-// main function, displays contents of page
-function display_page()
-{
-  echo display_header("Logging in...");
-  $input = array();
-  $errors = array();
-  $input = get_input($errors);
-  // always needs to check if the errors array is empty before continuing
-  if (empty($errors))
-    $pass_hash = get_password($input['username'], $errors);
-  if (empty($errors))
-    check_password($pass_hash, $input['password'], $errors);
-  if (!empty($errors)) {
-    echo error_container($errors);
-  } else {
-    echo success_container();
-  }
+require_once __DIR__ . '/../shared/page_components.php';
+require_once __DIR__ . '/../shared/connection.php';
 
-  echo display_footer();
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header('Location: ' . app_url('auth/login_form.php'));
+    exit;
 }
-// get POST'ed variables
-function get_input(&$errors)
-{
-  $input = array();
-  $input['username'] = filter_has_var(INPUT_POST, 'username')
-    ? $_POST['username'] : $errors[] = "Error: username is required.";
-  $input['password'] = filter_has_var(INPUT_POST, 'password')
-    ? $_POST['password'] : $errors[] = "Error: password is required.";
-  return $input;
+
+$username = trim((string) ($_POST['username'] ?? ''));
+$password = (string) ($_POST['password'] ?? '');
+$errors = [];
+
+if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    $errors[] = 'Sesja formularza wygasła. Spróbuj ponownie.';
 }
-// get password hash from db by username
-function get_password($username, &$errors)
-{
-  try {
-    // sanitize the username
-    $username = filter_var($username, FILTER_SANITIZE_STRING, FILTER_FLAG_STRIP_LOW);
-    // Make a database connection
-    $dbConn = getConnection();
-    $querySQL = "SELECT passwordHash FROM NBL_users WHERE username = :username";
-    // Prepare the sql statement using PDO
-    $stmt = $dbConn->prepare($querySQL);
-    // Execute the query using PDO
-    $stmt->execute(array(':username' => $username));
-    if ($stmt->rowCount() == 0) {
-      $errors[] = "Error: Incorrect credentials.";
-    } else if ($stmt->rowCount() > 0) {
-      $user = $stmt->fetchObject();
-      return $user->passwordHash;
+if ($username === '' || $password === '') {
+    $errors[] = 'Nick i hasło są wymagane.';
+}
+
+$user = null;
+if ($errors === []) {
+    try {
+        $statement = getConnection()->prepare(
+            'SELECT id, nickname, display_name, role, password_hash
+             FROM users
+             WHERE nickname = :nickname
+             LIMIT 1'
+        );
+        $statement->execute(['nickname' => $username]);
+        $candidate = $statement->fetch();
+
+        if (!is_array($candidate) || !password_verify($password, (string) $candidate['password_hash'])) {
+            $errors[] = 'Nieprawidłowy nick lub hasło.';
+        } else {
+            $user = $candidate;
+        }
+    } catch (PDOException) {
+        http_response_code(500);
+        $errors[] = 'Baza danych jest niedostępna. Sprawdź lokalną konfigurację.';
     }
-    // if the password was not found, return null
-    return null;
-  } catch (Exception $e) {
-    $errors[] = "There was a problem: {$e->getMessage()}";
-  }
-  return null;
 }
-// check if passwords match and log in 
-function check_password($pass_hash, $password, &$errors)
-{
-  if (!empty($pass_hash)) {
-    if (password_verify($password, $pass_hash)) {
-      // logs in
-      set_session();
-      $_SESSION['logged-in'] = true;
+
+if ($errors === [] && $user !== null) {
+    start_app_session();
+    session_regenerate_id(true);
+    $_SESSION['logged-in'] = true;
+    $_SESSION['user_id'] = (int) $user['id'];
+    $_SESSION['username'] = (string) $user['nickname'];
+    $_SESSION['display_name'] = (string) $user['display_name'];
+    $_SESSION['role'] = (string) $user['role'];
+
+    $returnTo = (string) ($_SESSION['login_return'] ?? '');
+    unset($_SESSION['login_return']);
+
+    if ($user['role'] === 'admin') {
+        $target = app_url('admin/index.php');
+    } elseif ($returnTo === 'cart') {
+        $target = app_url('cart.php');
     } else {
-      $errors[] = "Error: Incorrect credentials.";
+        $target = app_url('shop.php');
     }
-  } else {
-    $errors[] = "Error: Incorrect credentials.";
-  }
+
+    header('Location: ' . $target);
+    exit;
 }
-// display a success message
-function success_container()
-{
-  $con = <<<SUCCESS
-        <div class="container mt-5">
-            <h2> Success! </h2>
-            <p> You have successfully logged in. </p>
-            <a class="btn btn-dark" href="/admin/book_list.php"> Go to books </a>
-        </div>
-SUCCESS;
-  $con .= "\n";
-  return $con;
-}
+
+http_response_code(http_response_code() === 500 ? 500 : 422);
+echo display_header('Logowanie nieudane');
+echo display_navbar();
+echo error_container($errors, app_url('auth/login_form.php'));
+echo display_footer();
+

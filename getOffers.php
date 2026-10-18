@@ -1,48 +1,48 @@
 <?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/shared/connection.php';
+require_once __DIR__ . '/shared/functions.php';
+
+$jsonRequested = isset($_GET['useJSON']);
+
 try {
-	// include the file for the database connection
-	require_once('shared/connection.php');
-	// get database connection
-	$dbConn = getConnection();
+    $offer = getConnection()->query(
+        'SELECT o.bookTitle, c.catDesc, o.bookPrice
+         FROM NBL_special_offers o
+         INNER JOIN NBL_category c ON o.catID = c.catID
+         ORDER BY RAND()
+         LIMIT 1'
+    )->fetch();
 
-	if (isset($_REQUEST['useJSON'])) {
-		// echo what getJSONOffer returns
-		echo getJSONOffer($dbConn);
-	} else {    // otherwise just an html record is required
-		// so echo whatever getHTMLOffer returns to the browser or back to the ajax script
-		echo getHTMLOffer($dbConn);
-	}
-} catch (Exception $e) {
-	throw new Exception("Error " . $e->getMessage(), 0, $e);
-}
+    if ($offer === false) {
+        http_response_code(404);
+        $offer = null;
+    }
 
-function getHTMLOffer($dbConn)
-{
-	try {
-		// store the sql for a random special offer, the sql wraps things using concat in an html 'wrapper'
-		$sql = "select concat('<p>&#8220;',bookTitle,'&#8221;<br>\n<span class=\"category\">Category: ',catDesc,'</span><br>\n<span class=\"price\">Price: ',bookPrice,'</span></p>') as offer from NBL_special_offers inner join NBL_category on NBL_special_offers.catID = NBL_category.catID order by rand() limit 1";
+    if ($jsonRequested) {
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode($offer ?? ['error' => 'Brak dostępnych ofert.'], JSON_THROW_ON_ERROR);
+        exit;
+    }
 
-		// execute the query
-		$rsOffer = $dbConn->query($sql);
+    header('Content-Type: text/html; charset=UTF-8');
+    if ($offer === null) {
+        echo '<p>Brak dostępnych ofert.</p>';
+        exit;
+    }
 
-		// get the one offer returned
-		$offer = $rsOffer->fetchObject();
-
-		// return the offer
-		return $offer->offer;
-	} catch (Exception $e) {
-		return "Problem: " . $e->getMessage();
-	}
-}
-
-function getJSONOffer($dbConn)
-{
-	try {
-		$sql = "select bookTitle, catDesc, bookPrice from NBL_special_offers inner join NBL_category on NBL_special_offers.catID = NBL_category.catID order by rand() limit 1";
-		$rsOffer = $dbConn->query($sql);
-		$offer = $rsOffer->fetchObject();
-		return json_encode($offer);
-	} catch (Exception $e) {
-		return "Problem: " . $e->getMessage();
-	}
+    echo '<div class="border rounded p-2 mb-3">'
+        . '<strong>' . e($offer['bookTitle']) . '</strong><br>'
+        . '<span>Kategoria: ' . e($offer['catDesc']) . '</span><br>'
+        . '<span>Cena: ' . e(number_format((float) $offer['bookPrice'], 2)) . ' zł</span>'
+        . '</div>';
+} catch (PDOException) {
+    http_response_code(503);
+    if ($jsonRequested) {
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode(['error' => 'Oferty są chwilowo niedostępne.']);
+    } else {
+        echo '<p>Oferty są chwilowo niedostępne.</p>';
+    }
 }

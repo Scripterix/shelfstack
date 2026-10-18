@@ -1,5 +1,7 @@
 <?php
-require_once("shared/page_components.php");
+declare(strict_types=1);
+
+require_once __DIR__ . '/shared/page_components.php';
 echo display_header("Credits");
 echo display_navbar();
 ?>

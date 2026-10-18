@@ -1,96 +1,72 @@
 <?php
-require_once("../shared/page_components.php");
-require_once("../shared/connection.php");
-require_once("../shared/functions.php");
-// check if the user is logged in
-if (check_session()) {
-    display_page();
-} else {
-    header("Location: /auth/login_form.php");
+declare(strict_types=1);
+
+require_once __DIR__ . '/../shared/page_components.php';
+require_once __DIR__ . '/../shared/connection.php';
+
+require_admin();
+
+$books = [];
+$errors = [];
+
+try {
+    $statement = getConnection()->query(
+        'SELECT b.bookISBN, b.bookTitle, b.bookYear, b.bookPrice, c.catDesc
+         FROM NBL_books b
+         INNER JOIN NBL_category c ON c.catID = b.catID
+         ORDER BY b.bookTitle ASC'
+    );
+    $books = $statement->fetchAll();
+} catch (PDOException) {
+    http_response_code(500);
+    $errors[] = 'Could not load books from the database.';
 }
-// Displays page contents
-function display_page()
-{
-    echo display_header("Book list");
-    echo display_navbar();
-    $errors = array();
-    try {
-        $db_conn = getConnection();
-        book_list($db_conn, $errors);
-        // closes the connection
-        $db_conn = null;
-    } catch (Exception $ex) {
-        $errors[] = $ex;
-    }
-    if (!empty($errors)) {
-        echo error_container($errors);
-    }
-    echo display_footer();
-}
-// gets books from db and calls methods to format them
-function book_list($conn)
-{
-    try {
-        $sqlquery = "SELECT * FROM NBL_books as books
-        JOIN NBL_category as cat on cat.catID = books.catID
-        ORDER BY books.bookTitle ASC";
-        $queryResult = $conn->query($sqlquery);
-        if ($queryResult->rowCount() == 0) {
-            $errors[] = "Error: No books were found.";
-        } else if ($queryResult->rowCount() > 0) {
-            $q_rows = "";
-            while ($qrow = $queryResult->fetchObject()) {
-                $book = sanitize_book($qrow);
-                $q_rows .= book_row_format($book);
-            }
-            // display the list
-            echo book_list_format($q_rows);
-        }
-    } catch (Exception $ex) {
-        $errors[] = $ex;
-    }
-}
-// formats a book object into a table row 
-function book_row_format($q_row)
-{
-    $row_content = <<<ROWCONTENT
-        <tr>
-            <td><a href="book_edit.php?id={$q_row->bookISBN}">{$q_row->bookTitle}</a></td>
-            <td>{$q_row->bookYear}</td>
-            <td>{$q_row->catDesc}</td>
-            <td>{$q_row->bookPrice}</td>
-            <td><a class="btn btn-primary" href="book_edit.php?id={$q_row->bookISBN}">Edit</a></td>
-        </tr>
-ROWCONTENT;
-    $row_content .= "\n";
-    return $row_content;
-}
-// takes in book table rows and formats into a table
-function book_list_format($q_rows)
-{
-    // var_dump($q_rows);
-    $list_content = <<<LISTCONTENT
-        <div class="container mt-5">
-            <h1> Book list </h1>
-            <p> Select a book you want to edit. </p>
-            <div class="table-responsive-sm">
-                <table class="table"
-                    <thead>
-                        <tr>
-                            <td>Title</td>
-                            <td>Year</td>
-                            <td>Category</td>
-                            <td>Price</td>
-                            <td>Actions</td>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        $q_rows
-                    </tbody>
-                </table>
-            </div>
+
+echo display_header('Book list');
+echo display_navbar();
+?>
+<main class="container mt-5">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h1>Book list</h1>
+            <p class="mb-0">Select a book to edit its details.</p>
         </div>
-LISTCONTENT;
-    $list_content .= "\n";
-    return $list_content;
-}
+    </div>
+
+    <?php if (isset($_GET['updated'])): ?>
+        <div class="alert alert-success" role="status">The book was updated successfully.</div>
+    <?php endif; ?>
+
+    <?php if ($errors !== []): ?>
+        <?= error_container($errors, app_url()) ?>
+    <?php elseif ($books === []): ?>
+        <div class="alert alert-info">No books were found.</div>
+    <?php else: ?>
+        <div class="table-responsive-sm">
+            <table class="table table-striped">
+                <thead class="thead-dark">
+                    <tr>
+                        <th scope="col">Title</th>
+                        <th scope="col">Year</th>
+                        <th scope="col">Category</th>
+                        <th scope="col">Price</th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($books as $book): ?>
+                    <?php $editUrl = app_url('admin/book_edit.php?id=' . rawurlencode((string) $book['bookISBN'])); ?>
+                    <tr>
+                        <td><a href="<?= e($editUrl) ?>"><?= e($book['bookTitle']) ?></a></td>
+                        <td><?= e($book['bookYear']) ?></td>
+                        <td><?= e($book['catDesc']) ?></td>
+                        <td>£<?= e(number_format((float) $book['bookPrice'], 2)) ?></td>
+                        <td><a class="btn btn-primary btn-sm" href="<?= e($editUrl) ?>">Edit</a></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+</main>
+<?= display_footer() ?>

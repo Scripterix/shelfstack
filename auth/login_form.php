@@ -1,50 +1,66 @@
 <?php
-require_once("../shared/page_components.php");
-require_once("../shared/functions.php");
-// if you are logged in, you get already_loggedin to books
-echo display_header("Login");
-// check if the user is logged in
-if (check_session()) {
-    echo already_loggedin();
-} else echo display_main();
+declare(strict_types=1);
 
-echo display_footer();
-// display message if already logged in 
-function already_loggedin()
-{
-    $con = <<<SUCCESS
-        <div class="container mt-5">
-            <h2> You are already logged in! </h2>
-            <p> You can proceed to the administrator side of the webpage. </p>
-            <a class="btn btn-dark" href="/admin/book_list.php"> Go to books </a>
-            <a class="btn btn-dark" href="logout.php"> Logout from the webpage </a>
-        </div>
-SUCCESS;
-    $con .= "\n";
-    return $con;
+require_once __DIR__ . '/../shared/page_components.php';
+require_once __DIR__ . '/../shared/demo_accounts.php';
+
+if (check_session()) {
+    $target = is_admin() ? app_url('admin/index.php') : app_url('shop.php');
+    header('Location: ' . $target);
+    exit;
 }
-// display login form
-function display_main()
-{
-    $login_form = <<<LOGIN
-    <div class="container mt-5">
-        <div class="container col-md-6 offset-md-3">
-            <h2>You are required to login</h2>
-            <form method="post" action="login_process.php">
-                Username <input class="form-control mb-3" type="text" name="username" required="required">
-                Password <input class="form-control mb-3" type="password" name="password" required="required">
-                <div class="row">
-                    <div class="col-8">
-                        <input class="btn btn-dark btn-block" type="submit" value="Log in">
-                    </div>
-                    <div class="col-4">
-                        <a href="/index.php" class="btn btn-dark btn-block"> Home </a>
-                    </div>
-                </div>
-            </form>
+
+$actionUrl = app_url('auth/login_process.php');
+$token = csrf_token();
+$accounts = demo_accounts();
+
+echo display_header('Logowanie');
+echo display_navbar();
+?>
+<main class="container page-shell login-layout">
+    <section class="auth-card" aria-labelledby="login-title">
+        <span class="auth-icon" aria-hidden="true">login</span>
+        <span class="eyebrow">ShelfStack demo</span>
+        <h1 id="login-title">Zaloguj się</h1>
+        <p class="auth-intro">Wybierz jedno ze stałych kont ćwiczeniowych. Rejestracja nie jest potrzebna.</p>
+        <form method="post" action="<?= e($actionUrl) ?>">
+            <input type="hidden" name="csrf_token" value="<?= e($token) ?>">
+            <div class="form-group">
+                <label for="username">Nick</label>
+                <input id="username" class="form-control" type="text" name="username" autocomplete="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Hasło</label>
+                <input id="password" class="form-control" type="password" name="password" autocomplete="current-password" required>
+            </div>
+            <div class="auth-actions">
+                <button class="button-primary" type="submit">Zaloguj się →</button>
+                <a href="<?= e(app_url()) ?>" class="button-secondary-light">Wróć na stronę</a>
+            </div>
+        </form>
+        <p class="auth-note">Wyłącznie lokalne konta demonstracyjne</p>
+    </section>
+
+    <section class="demo-accounts" aria-labelledby="demo-accounts-title">
+        <div class="section-heading compact-heading">
+            <div>
+                <span class="eyebrow">Bez rejestracji</span>
+                <h2 id="demo-accounts-title">Dane do logowania</h2>
+            </div>
         </div>
-    </div>
-LOGIN;
-    $login_form .= "\n";
-    return $login_form;
-}
+        <div class="demo-account-grid">
+            <?php foreach ($accounts as $account): ?>
+                <article class="demo-account-card <?= $account['role'] === 'admin' ? 'demo-account-admin' : '' ?>">
+                    <span class="account-role"><?= $account['role'] === 'admin' ? 'Administrator' : 'Klient' ?></span>
+                    <h3><?= e($account['display_name']) ?></h3>
+                    <dl>
+                        <div><dt>Nick</dt><dd><code><?= e($account['nickname']) ?></code></dd></div>
+                        <div><dt>Hasło</dt><dd><code><?= e($account['password']) ?></code></dd></div>
+                    </dl>
+                </article>
+            <?php endforeach; ?>
+        </div>
+    </section>
+</main>
+<?= display_footer() ?>
+
